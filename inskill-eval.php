@@ -7,40 +7,122 @@ Author: Michel SOMAS (InSkill)
 */
 
 // Sécurité
-if ( ! defined( 'ABSPATH' ) ) {
-    exit;
-}
+if ( ! defined( 'ABSPATH' ) ) exit;
 
-// Définir des constantes utiles
+// Constantes
 define( 'INSKILL_EVAL_DIR', plugin_dir_path( __FILE__ ) );
 define( 'INSKILL_EVAL_URL', plugin_dir_url( __FILE__ ) );
 
-// Inclusion des fichiers d'installation/désinstallation et du shortcode
-include_once( INSKILL_EVAL_DIR . 'inskill-eval-install.php' );
-include_once( INSKILL_EVAL_DIR . 'shortcodes.php' );
+// Installation / shortcodes / réglages
+include_once INSKILL_EVAL_DIR . 'inskill-eval-install.php';
+include_once INSKILL_EVAL_DIR . 'shortcodes.php';
+include_once INSKILL_EVAL_DIR . 'settings.php';
 
-// Inclusion du fichier de réglages
-include_once( INSKILL_EVAL_DIR . 'settings.php' );
+/**
+ * 1) Handler pour générer le ZIP d’attestations
+ */
+add_action( 'admin_post_download_attestations', 'inskill_eval_download_attestations' );
+function inskill_eval_download_attestations() {
+    // Sécurité
+    if ( ! current_user_can('manage_options') ) {
+        wp_die('Vous n’avez pas la permission.');
+    }
 
-// Inclusion des fichiers d'administration uniquement via le hook admin_menu
-if ( is_admin() ) {
-    // Le hook admin_menu est attaché avec une priorité de 5
-    add_action('admin_menu', 'inskill_eval_admin_includes', 5);
+    // Récupérer l’ID du questionnaire
+    $qid = isset($_GET['questionnaire_id']) ? intval($_GET['questionnaire_id']) : 0;
+    if ( ! $qid ) {
+        wp_die('Questionnaire non spécifié.');
+    }
+
+    global $wpdb;
+    $tbl_learners  = $wpdb->prefix . 'inskill_eval_learners';
+    $tbl_responses = $wpdb->prefix . 'inskill_eval_responses';
+
+    // On boucle sur les apprenants inscrits
+    $learners = $wpdb->get_results(
+        $wpdb->prepare(
+            "SELECT * FROM $tbl_learners WHERE questionnaire_id = %d",
+            $qid
+        )
+    );
+    if ( empty($learners) ) {
+        wp_die('Aucun participant inscrit pour ce questionnaire.');
+    }
+
+    // Préparation du ZIP
+    $zip     = new ZipArchive();
+    $tmp_zip = wp_tempnam( 'attestations_q' . $qid . '.zip' );
+    if ( $zip->open( $tmp_zip, ZipArchive::CREATE ) !== TRUE ) {
+        wp_die('Impossible de créer l’archive ZIP.');
+    }
+
+    // Pour chaque apprenant, on retrouve sa response_id puis on fait un wp_remote_get
+    foreach ( $learners as $L ) {
+        // Recherche de la réponse (validation du questionnaire)
+        $resp = $wpdb->get_var( $wpdb->prepare(
+            "SELECT id FROM $tbl_responses WHERE questionnaire_id = %d AND LOWER(participant_email) = %s",
+            $qid,
+            strtolower( $L->participant_email )
+        ) );
+        if ( ! $resp ) {
+            // Le participant n'a pas validé le questionnaire -> pas d'attestation
+            continue;
+        }
+
+        // URL publique de génération de l'attestation (JPG)
+        $url = INSKILL_EVAL_URL
+             . 'generate-attestation-image.php?response_id='
+             . $resp;
+
+        // Appel HTTP pour récupérer le binaire
+        $result = wp_remote_get( $url, array( 'timeout' => 60 ) );
+        if ( is_wp_error($result) || 200 !== wp_remote_retrieve_response_code($result) ) {
+            continue;
+        }
+        $img = wp_remote_retrieve_body( $result );
+        if ( empty($img) ) {
+            continue;
+        }
+
+        // Ajoute dans l'archive
+        $filename = sanitize_file_name(
+            "attestation_{$L->participant_nom}_{$L->participant_prenom}.jpg"
+        );
+        $zip->addFromString( $filename, $img );
+    }
+
+    // Ferme le ZIP
+    $zip->close();
+
+    // Envoi des headers et du contenu
+    if ( headers_sent() ) {
+        wp_die('Les en-têtes ont déjà été envoyés, impossible d’envoyer le ZIP.');
+    }
+    header( 'Content-Type: application/zip' );
+    header( 'Content-Disposition: attachment; filename="attestations_q' . $qid . '.zip"' );
+    header( 'Content-Length: ' . filesize( $tmp_zip ) );
+    readfile( $tmp_zip );
+    @unlink( $tmp_zip );
+    exit;
 }
 
-function inskill_eval_admin_includes(){
-    // Inclusion inconditionnelle du fichier qui enregistre le menu
-    include_once( INSKILL_EVAL_DIR . 'admin/create-questionnaire.php' );
-    
-    // Inclusion conditionnelle du contenu des autres pages selon le paramètre 'page'
-    $current_page = isset($_GET['page']) ? $_GET['page'] : '';
-    if ( $current_page == 'inskill-eval-manage' ) {
-        include_once( INSKILL_EVAL_DIR . 'admin/manage-questionnaires.php' );
-    } elseif ( $current_page == 'inskill-eval-results' ) {
-        include_once( INSKILL_EVAL_DIR . 'admin/view-results.php' );
+/**
+ * 2) Chargement des pages d’admin
+ */
+if ( is_admin() ) {
+    add_action( 'admin_menu', 'inskill_eval_admin_includes', 5 );
+}
+function inskill_eval_admin_includes() {
+    include_once INSKILL_EVAL_DIR . 'admin/create-questionnaire.php';
+    $page = isset($_GET['page']) ? $_GET['page'] : '';
+    if ( $page === 'inskill-eval-manage' ) {
+        include_once INSKILL_EVAL_DIR . 'admin/manage-questionnaires.php';
+    }
+    elseif ( $page === 'inskill-eval-results' ) {
+        include_once INSKILL_EVAL_DIR . 'admin/view-results.php';
     }
 }
 
-// Hook d'activation et de désactivation
+// Activation / désactivation
 register_activation_hook( __FILE__, 'inskill_eval_install' );
 register_deactivation_hook( __FILE__, 'inskill_eval_uninstall' );
