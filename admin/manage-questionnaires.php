@@ -100,6 +100,7 @@ function inskill_eval_manage_questionnaires_page() {
         $group_designation    = sanitize_text_field($_POST['group_designation']);
         $trainer_name         = sanitize_text_field($_POST['trainer_name']);
         $training_dates       = sanitize_text_field($_POST['training_dates']);
+        $training_date_finale = sanitize_text_field($_POST['training_date_finale']);
         $training_duration    = sanitize_text_field($_POST['training_duration']);
         $training_location    = sanitize_text_field($_POST['training_location']);
         $attestation_formation= isset($_POST['attestation_formation']) ? 1 : 0;
@@ -113,6 +114,7 @@ function inskill_eval_manage_questionnaires_page() {
                 'group_designation'     => $group_designation,
                 'trainer_name'          => $trainer_name,
                 'training_dates'        => $training_dates,
+                'training_date_finale'  => $training_date_finale,
                 'training_duration'     => $training_duration,
                 'training_location'     => $training_location,
                 'attestation_formation' => $attestation_formation,
@@ -164,6 +166,13 @@ function inskill_eval_manage_questionnaires_page() {
               <tr>
                 <th><label for="training_dates">Date J1 (JJ/MM/AAAA)</label></th>
                 <td><input name="training_dates" type="text" id="training_dates" class="regular-text" value="<?php echo esc_attr($q->training_dates); ?>" required></td>
+              </tr>
+              <tr>
+                <th><label for="training_date_finale">Date de formation J.Finale (JJ/MM/AAAA)</label></th>
+                <td>
+                  <input name="training_date_finale" type="text" id="training_date_finale" class="regular-text"
+                         value="<?php echo esc_attr($q->training_date_finale); ?>" required>
+                </td>
               </tr>
               <tr>
                 <th><label for="training_duration">Durée (en lettres)</label></th>
