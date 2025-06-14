@@ -2,7 +2,7 @@
 /*
 Plugin Name: InSkill Eval
 Description: Plugin pour évaluer la satisfaction des participants en formation.
-Version: 1.0
+Version: 1.1
 Author: Michel SOMAS (InSkill)
 */
 
@@ -56,7 +56,6 @@ function inskill_eval_download_attestations() {
         wp_die('Impossible de créer l’archive ZIP.');
     }
 
-    // Pour chaque apprenant, on retrouve sa response_id puis on fait un wp_remote_get
     foreach ( $learners as $L ) {
         // Recherche de la réponse (validation du questionnaire)
         $resp = $wpdb->get_var( $wpdb->prepare(
@@ -64,17 +63,20 @@ function inskill_eval_download_attestations() {
             $qid,
             strtolower( $L->participant_email )
         ) );
-        if ( ! $resp ) {
-            // Le participant n'a pas validé le questionnaire -> pas d'attestation
-            continue;
+
+        // Construire les paramètres pour l'appel
+        if ( $resp ) {
+            // Participant ayant validé
+            $param = 'response_id=' . $resp;
+        } else {
+            // Participant inscrit mais non validé
+            $param = 'learner_id=' . $L->id;
         }
 
         // URL publique de génération de l'attestation (JPG)
-        $url = INSKILL_EVAL_URL
-             . 'generate-attestation-image.php?response_id='
-             . $resp;
+        $url = INSKILL_EVAL_URL . 'generate-attestation-image.php?' . $param;
 
-        // Appel HTTP pour récupérer le binaire
+        // Appel HTTP pour récupérer le flux JPEG
         $result = wp_remote_get( $url, array( 'timeout' => 60 ) );
         if ( is_wp_error($result) || 200 !== wp_remote_retrieve_response_code($result) ) {
             continue;
@@ -84,9 +86,10 @@ function inskill_eval_download_attestations() {
             continue;
         }
 
-        // Ajoute dans l'archive
+        // Nom de fichier
+        $suffix = $resp ? '' : '_NO-EVAL';
         $filename = sanitize_file_name(
-            "attestation_{$L->participant_nom}_{$L->participant_prenom}.jpg"
+            "attestation_{$L->participant_nom}_{$L->participant_prenom}{$suffix}.jpg"
         );
         $zip->addFromString( $filename, $img );
     }

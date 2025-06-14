@@ -16,6 +16,7 @@ function inskill_eval_install() {
         group_designation varchar(255) NOT NULL,
         trainer_name varchar(255) NOT NULL,
         training_dates varchar(50) NOT NULL,
+        training_date_finale varchar(50) NOT NULL,
         training_duration varchar(255) NOT NULL,
         training_location varchar(255) NOT NULL,
         attestation_formation tinyint(1) NOT NULL DEFAULT 0,
